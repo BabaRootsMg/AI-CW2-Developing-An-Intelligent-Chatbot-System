@@ -26,10 +26,10 @@ def display_message(sender, message):
     chat_area.config(state='disabled')
     chat_area.see(tk.END)
 
-# GUI setup
+# Tkinter Gui 
 root = tk.Tk()
-root.title("TrainBot - UEA Project")
-root.geometry("500x500")
+root.title("Train checker")
+root.geometry("800x800")
 
 chat_area = scrolledtext.ScrolledText(root, state='disabled', wrap=tk.WORD)
 chat_area.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
@@ -40,5 +40,5 @@ entry_box.pack(padx=10, pady=(0,10), side=tk.LEFT, fill=tk.X, expand=True)
 send_button = tk.Button(root, text="Send", command=send_message)
 send_button.pack(padx=(0,10), pady=(0,10), side=tk.RIGHT)
 
-# Run the interface
+#Start gui
 root.mainloop()
