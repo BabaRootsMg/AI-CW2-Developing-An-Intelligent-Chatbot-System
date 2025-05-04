@@ -1,4 +1,5 @@
-"""Defines backend logic for the GUI and chatbot to help with user inputs basic structure user must be """
+# chatbot_logic.py
+
 def get_bot_response(user_input):
     user_input = user_input.lower()
     if "ticket" in user_input or "book" in user_input:
