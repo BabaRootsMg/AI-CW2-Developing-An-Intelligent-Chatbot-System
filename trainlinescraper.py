@@ -6,6 +6,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 from types import SimpleNamespace
 
+
 def select_origin_and_destination(driver, origin, destination):
     wait = WebDriverWait(driver, 20)
 
@@ -89,12 +90,22 @@ def select_date_and_time(driver, field_id, target_month, target_day, hour_val, m
 
     return {"error": f"Could not reach {target_month}"}
 
+
 def find_cheapest_ticket(departure, destination, date, time_of_day=None, trip_type="single"):
     """
     Wraps your Selenium helper functions into a single call.
     Returns SimpleNamespace(price: float, url: str).
     """
-    # 1) Setup headless Chrome
+    # ────────────────────────────────────────────────────────────
+    # HANDLE MISSING TIME
+    if time_of_day is None:
+        hr, mn = "00", "00"
+    elif isinstance(time_of_day, str):
+        hr, mn = time_of_day.split(":")
+    else:
+        hr, mn = time_of_day.strftime("%H"), time_of_day.strftime("%M")
+    # ────────────────────────────────────────────────────────────
+
     opts = webdriver.ChromeOptions()
     opts.add_argument("--headless")
     opts.add_argument("--window-size=1920,1080")
@@ -103,45 +114,62 @@ def find_cheapest_ticket(departure, destination, date, time_of_day=None, trip_ty
 
     try:
         driver.get("https://www.thetrainline.com")
-        wait.until(EC.presence_of_element_located((By.TAG_NAME,"body")))
-        # accept cookies if needed
+
+        # Accept cookies if needed
         try:
-            wait.until(EC.element_to_be_clickable(
-                (By.ID,"onetrust-accept-btn-handler"))).click()
-        except:
+            wait.until(EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))).click()
+        except Exception:
             pass
 
-        # 2) Select origin/dest and date/time
+        # ──────────────────────────────────────────────────────
+        # MAKE SURE DARK COOKIE OVERLAY IS GONE
+        try:
+            wait.until(EC.invisibility_of_element_located(
+                (By.CSS_SELECTOR, ".onetrust-pc-dark-filter")
+            ))
+        except Exception:
+            driver.execute_script("""
+                const o = document.querySelector('.onetrust-pc-dark-filter');
+                if (o) o.remove();
+            """)
+        # ──────────────────────────────────────────────────────
+
+        # Step 1: select origin & destination
         select_origin_and_destination(driver, departure, destination)
 
-        # build month/day/hour/minute from date & time_of_day
-        month = date.strftime("%B %Y")
-        day   = str(date.day)
-        hr, mn = (time_of_day.split(":") if isinstance(time_of_day, str)
-                  else (time_of_day.strftime("%H"), time_of_day.strftime("%M")))
-        select_date_and_time(driver,
-                             field_id="jsf-outbound-time-input-toggle",
-                             target_month=month,
-                             target_day=day,
-                             hour_val=hr,
-                             minute_val=mn)
+        # Step 2: select date & time
+        select_date_and_time(
+            driver,
+            field_id="jsf-outbound-time-input-toggle",
+            target_month=date.strftime("%B %Y"),
+            target_day=str(date.day),
+            hour_val=hr,
+            minute_val=mn
+        )
 
-        # 3) Submit search
+        # Step 3: remove any lingering overlay before submit
+        driver.execute_script("""
+            const o = document.querySelector('.onetrust-pc-dark-filter');
+            if (o) o.remove();
+        """)
+
+        # Step 4: Submit search
         btn = wait.until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, "button[data-testid='jsf-submit']")))
+            (By.CSS_SELECTOR, "button[data-testid='jsf-submit']")
+        ))
         btn.click()
 
-        # 4) Wait for results
+        # Step 5: Wait for results
         wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, "[data-testid='outbound-journey']")))
+            (By.CSS_SELECTOR, "[data-testid='outbound-journey']")
+        ))
 
-        # 5) Scrape cheapest price & link
+        # Step 6: Scrape cheapest price & link
         price_txt = driver.find_element(
             By.CSS_SELECTOR,
             ".outbound-journey .ticket-info .price .amount"
-        ).text.replace("£","")
+        ).text.replace("£", "")
         price = float(price_txt)
-
         url = driver.find_element(
             By.CSS_SELECTOR,
             ".outbound-journey .cta a"
@@ -151,6 +179,7 @@ def find_cheapest_ticket(departure, destination, date, time_of_day=None, trip_ty
 
     finally:
         driver.quit()
+
 
 # ---------- Run Script ----------
 if __name__ == "__main__":
