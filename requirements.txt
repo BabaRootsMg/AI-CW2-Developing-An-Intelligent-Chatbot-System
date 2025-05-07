@@ -1,5 +1,0 @@
-selenium
-spacy
-dateparser
-boto3
-python-dotenv
