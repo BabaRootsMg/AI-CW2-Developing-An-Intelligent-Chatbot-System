@@ -1,0 +1,1 @@
+rid,date_of_service,location,scheduled_departure_time,scheduled_arrival_time,actual_departure_time,actual_arrival_time,late_cancellation_reason,toc_code,year,direction,sched_dep_dt,act_dep_dt,sched_arr_dt,act_arr_dt,arr_delay_min,dest_sched_dt,remaining_sched_mins

@@ -1,8 +1,8 @@
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.neighbors      import KNeighborsRegressor
-from sklearn.ensemble       import RandomForestRegressor, ExtraTreesRegressor, HistGradientBoostingRegressor
-from load_train_test_split import load_train_test_splits
+from sklearn.ensemble       import ExtraTreesRegressor, HistGradientBoostingRegressor
+from Task2.load_train_test_split import load_train_test_splits
 from sklearn.linear_model import LinearRegression
 from math import sqrt
 from sklearn.metrics import mean_squared_error
