@@ -7,7 +7,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 # 1) Load consolidated data
-csv_path = Path("master_schedule.csv")
+csv_path = Path("training_data.csv.csv")
 if not csv_path.exists():
     sys.exit(f"❌ Cannot find {csv_path} here.")
 

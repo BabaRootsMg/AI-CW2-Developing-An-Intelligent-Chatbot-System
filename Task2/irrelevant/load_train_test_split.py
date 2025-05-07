@@ -4,7 +4,7 @@ import re
 import pandas as pd
 from pathlib import Path
 
-def load_train_test_splits(master_csv="master_schedule.csv"):
+def load_train_test_splits(master_csv="training_data.csv"):
     # 1) Load
     path = Path(master_csv)
     if not path.exists():

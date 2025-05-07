@@ -12,7 +12,7 @@ from sklearn.ensemble import RandomForestRegressor
 # 1) Load your train/test splits
 #    Ensure master_schedule.csv is in the same directory as this file,
 #    or give the correct relative path.
-X_train, X_test, y_train, y_test = load_train_test_splits("master_schedule.csv")
+X_train, X_test, y_train, y_test = load_train_test_splits("training_data.csv")
 
 print(f"Loaded X_train: {X_train.shape}, X_test: {X_test.shape}")
 
