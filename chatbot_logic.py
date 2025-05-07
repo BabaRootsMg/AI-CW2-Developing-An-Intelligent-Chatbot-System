@@ -1,6 +1,6 @@
 # chatbot_logic.py
 
-from nlp import NLPProcessor
+from nlp_module import NLPProcessor
 from api_integration import find_cheapest_ticket
 from prediction_model import predict_arrival
 
