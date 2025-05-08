@@ -110,7 +110,7 @@ def build_trainline_link(departure_code, destination_code, date, time_of_day):
     return "https://www.thetrainline.com/search?" + urlencode(params)
 
 def save_screenshot(driver, prefix="screenshot"):
-    """Save a screenshot with timestamp"""
+    """Save a screenshot with timestamp """
     try:
         os.makedirs("screenshots", exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
