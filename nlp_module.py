@@ -1,137 +1,153 @@
+# File: stations_loader.py
+import csv
+from pathlib import Path
 
-"""
-nlp_module.py
---------------
-This module handles basic NLP tasks including intent detection and 
-entity extraction using spaCy and custom rule-based logic.
-"""
+def load_station_dict(csv_path: Path) -> dict[str, str]:
+    """
+    Load a CSV of UK stations with columns:
+      official_name, long_name, name_alias, alpha3, tiploc
+    Returns a dict mapping each official_name, long_name, and name_alias (lowercased)
+    to its 3-letter code.
+    """
+    station_map: dict[str, str] = {}
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) < 5:
+                continue
+            official, longname, alias, alpha3, tiploc = row
+            code = alpha3.strip() or tiploc.strip()
+            if not code or code == "\\N":
+                continue
+            for key in (official, longname, alias):
+                if key and key != "\\N":
+                    station_map[key.lower()] = code
+    return station_map
+
+
+# File: nlp_module.py
 import re
+import logging
 import spacy
+from spacy.matcher import PhraseMatcher
 from dateparser.search import search_dates
+from pathlib import Path
+from stations_loader import load_station_dict
+import difflib
 
 class NLPProcessor:
     """
     NLP Processor for intent classification, entity extraction, and slot filling.
-    Supports 'find_ticket' and 'predict_delay' intents with relevant slots.
+    Uses a full station list with fuzzy fallback for user input.
     """
-    def __init__(self, station_dict=None):
-        # Load spaCy English model for tokenization/NER
+    def __init__(self, station_dict: dict[str,str]=None, stations_csv_path: str=None):
+        self.logger = logging.getLogger(__name__)
         self.nlp = spacy.load("en_core_web_sm")
-
-        # Intent keywords (simple keyword-based intent classification)
-        self.intent_keywords = {
-            "find_ticket": ["ticket", "price", "journey", "cheapest"],
-            "predict_delay": ["delay", "late", "arrival", "predict"]
-        }
-
-        # Station name-to-code mapping (overrideable)
-        # Example defaults; replace with full list or load from KB/DB
+        if station_dict is None and stations_csv_path:
+            station_dict = load_station_dict(Path(stations_csv_path))
         self.stations = station_dict or {
             "norwich": "NWI",
             "london": "LST",
             "oxford": "OXF",
             "ipswich": "IPS"
         }
-
-    def predict_intent(self, text):
-        """Determine user intent based on keyword matching."""
-        txt = text.lower()
-        for intent, keywords in self.intent_keywords.items():
-            if any(kw in txt for kw in keywords):
-                return intent
-        return "smalltalk"
-
-    def extract_entities(self, text):
-        """
-        Extract raw entities from text:
-          - Dates and times via dateparser.search.search_dates
-          - Station names via simple lookup
-          - Trip type (single/return)
-          - Train ID
-          - Delay minutes
-        Returns a dict of potential slots.
-        """
-        ents = {}
-
-        # 1) Find date/time mentions
-        dt_matches = search_dates(text, settings={"PREFER_DATES_FROM": "future"}) or []
-        datetimes = [dt for _, dt in dt_matches]
-        if datetimes:
-            # assign first as date/time
-            first = datetimes[0]
-            ents["date"] = first.date()
-            # only set time if not midnight
-            if first.time() != first.replace(hour=0, minute=0, second=0, microsecond=0).time():
-                ents["time"] = first.time()
-            # keep raw list if needed
-            if len(datetimes) > 1:
-                ents["datetimes"] = datetimes
-
-        # 2) Find station mentions
-        found = []
-        for name, code in self.stations.items():
-            if re.search(rf"\b{name}\b", text, re.IGNORECASE):
-                found.append((name.lower(), code))
-        if found:
-            # Try regex 'from X to Y'
-            frmto = re.search(r"from\s+([A-Za-z ]+)\s+to\s+([A-Za-z ]+)", text, re.IGNORECASE)
-            if frmto:
-                dep = frmto.group(1).strip().lower()
-                dst = frmto.group(2).strip().lower()
-                if dep in self.stations:
-                    ents["departure"] = self.stations[dep]
-                if dst in self.stations:
-                    ents["destination"] = self.stations[dst]
-            elif len(found) >= 2:
-                # fallback: first as departure/current, second as destination
-                ents["departure"] = found[0][1]
-                ents["destination"] = found[1][1]
-            else:
-                # single station mention; let dialog manager ask
-                ents.setdefault("stations", []).append(found[0][1])
-
-        # 3) Trip type
-        if re.search(r"\b(return|back)\b", text, re.IGNORECASE):
-            ents["trip_type"] = "return"
-        elif re.search(r"\b(single|one[- ]way)\b", text, re.IGNORECASE):
-            ents["trip_type"] = "single"
-
-        # 4) Train ID (for delay prediction)
-        tid = re.search(r"train\s*(\d+)", text, re.IGNORECASE)
-        if tid:
-            ents["train_id"] = tid.group(1)
-
-        # 5) Delay minutes (for delay prediction)
-        dm = re.search(r"(\d+)\s*minutes?", text, re.IGNORECASE)
-        if dm:
-            ents["delay_minutes"] = int(dm.group(1))
-
-        return ents
-
-    def parse(self, text):
-        """
-        Parse user text into intent + slots.
-        """
-        intent = self.predict_intent(text)
-        slots = self.extract_entities(text)
-        return {"intent": intent, "slots": slots}
-
-    def missing_slots(self, intent, slots):
-        """
-        Given an intent and current slots, return list of missing required slots.
-        """
-        requirements = {
-            "find_ticket": ["departure", "destination", "date", "trip_type"],
-            "predict_delay": ["train_id", "current_station", "delay_minutes", "destination"]
+        # PhraseMatcher setup
+        self.matcher = PhraseMatcher(self.nlp.vocab, attr="LOWER")
+        patterns = [self.nlp.make_doc(name) for name in self.stations.keys()]
+        self.matcher.add("STATION", patterns)
+        # Intent keywords
+        self.intent_keywords = {
+            "find_ticket": ["ticket","price","journey","cheapest","book","train","travel","trip","fare"],
+            "predict_delay": ["delay","late","arrival","predict","delayed"]
         }
-        required = requirements.get(intent, [])
-        missing = []
-        for key in required:
-            if key not in slots:
-                missing.append(key)
-        return missing
+        # Precompile regex
+        self._pat_return = re.compile(r"\b(return|back)\b", re.IGNORECASE)
+        self._pat_single = re.compile(r"\b(single|one[- ]way)\b", re.IGNORECASE)
+        self._pat_train  = re.compile(r"train\s*(\d+)", re.IGNORECASE)
+        self._pat_delay  = re.compile(r"(\d+)\s*minutes?", re.IGNORECASE)
 
-# Example usage:
-# nlp = NLPProcessor()\# state = nlp.parse("I need a ticket from Norwich to London on July 15 return")
-# print(state)
-# print(nlp.missing_slots(state['intent'], state['slots']))
+    def predict_intent(self, text: str) -> tuple[str,float]:
+        txt = text.lower()
+        scores = { intent: sum(1 for kw in kws if kw in txt) for intent,kws in self.intent_keywords.items() }
+        best_intent, best_score = max(scores.items(), key=lambda x: x[1])
+        total = sum(len(kws) for kws in self.intent_keywords.values())
+        confidence = best_score/total if total else 0.0
+        if best_score == 0:
+            return "unsupported", confidence
+        return best_intent, confidence
+
+    def extract_datetimes(self, text: str) -> dict:
+        slots = {}
+        matches = search_dates(text, settings={"PREFER_DATES_FROM":"future"}) or []
+        dates = [dt for _,dt in matches]
+        if dates:
+            first = dates[0]
+            slots['date'] = first.date()
+            if first.time()!=first.replace(hour=0,minute=0,second=0,microsecond=0).time():
+                slots['time'] = first.time()
+            if len(dates)>1:
+                second = dates[1]
+                slots['return_date'] = second.date()
+                if second.time()!=second.replace(hour=0,minute=0,second=0,microsecond=0).time():
+                    slots['return_time'] = second.time()
+        return slots
+
+    def extract_stations(self, text: str, intent: str) -> dict:
+        doc = self.nlp(text)
+        matches = self.matcher(doc)
+        found = [doc[start:end].text.lower() for _,start,end in matches]
+        unique = list(dict.fromkeys(found))
+        slots = {}
+        if intent=='predict_delay':
+            if unique:
+                slots['current_station']=self.stations[unique[0]]
+            if len(unique)>1:
+                slots['destination']=self.stations[unique[1]]
+        else:
+            frmto = re.search(r"from\s+([A-Za-z ]+?)\s+to\s+([A-Za-z ]+?)\b", text, re.IGNORECASE)
+            if frmto:
+                dep=frmto.group(1).strip().lower(); dst=frmto.group(2).strip().lower()
+                dc=self.stations.get(dep); ec=self.stations.get(dst)
+                if dc and ec:
+                    return {'departure':dc,'destination':ec}
+            if len(unique)>=2:
+                slots['departure']=self.stations[unique[0]]
+                slots['destination']=self.stations[unique[1]]
+            elif unique:
+                slots['stations']=[self.stations[unique[0]]]
+        # fuzzy fallback
+        if not slots and len(text)<40:
+            cand=difflib.get_close_matches(text.lower(), self.stations.keys(), n=1, cutoff=0.8)
+            if cand:
+                slots['stations']=[self.stations[cand[0]]]
+        return slots
+
+    def extract_trip_type(self, text: str) -> str|None:
+        if self._pat_return.search(text): return 'return'
+        if self._pat_single.search(text): return 'single'
+        return None
+
+    def extract_train_info(self, text: str) -> dict:
+        slots={}
+        tid=self._pat_train.search(text)
+        if tid: slots['train_id']=tid.group(1)
+        dm=self._pat_delay.search(text)
+        if dm: slots['delay_minutes']=int(dm.group(1))
+        return slots
+
+    def parse(self, text: str) -> dict:
+        intent,conf=self.predict_intent(text)
+        slots={}
+        slots.update(self.extract_datetimes(text))
+        slots.update(self.extract_stations(text,intent))
+        tp=self.extract_trip_type(text)
+        if tp: slots['trip_type']=tp
+        if intent=='predict_delay': slots.update(self.extract_train_info(text))
+        return {'intent':intent,'confidence':conf,'slots':slots}
+
+    def missing_slots(self, intent: str, slots: dict) -> list[str]:
+        reqs={'find_ticket':['departure','destination','date','trip_type'],
+              'predict_delay':['train_id','current_station','delay_minutes','destination']}
+        return [k for k in reqs.get(intent,[]) if k not in slots]
+
+
