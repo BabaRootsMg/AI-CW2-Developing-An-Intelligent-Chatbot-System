@@ -19,58 +19,58 @@ def select_origin_and_destination(driver, origin, destination):
     # ----- ORIGIN -----
     origin_trigger = wait.until(EC.element_to_be_clickable((By.ID, "jsf-origin-input")))
     origin_trigger.click()
-    print("✅ Clicked origin input")
+    print(" Clicked origin input")
 
     origin_input = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[data-testid='jsf-origin']")))
     origin_input.clear()
     origin_input.send_keys(origin)
-    print(f"⌨️ Typed origin: {origin}")
+    print(f" Typed origin: {origin}")
     time.sleep(1.5)
     origin_input.send_keys(Keys.RETURN)
     time.sleep(1)
 
     selected_origin = driver.find_element(By.ID, "jsf-origin-input").get_attribute("value")
     if origin.lower() in selected_origin.lower():
-        print(f"✅ Origin confirmed: {selected_origin}")
+        print(f" Origin confirmed: {selected_origin}")
     else:
-        print(f"❌ Origin mismatch: Got '{selected_origin}', expected '{origin}'")
+        print(f" Origin mismatch: Got '{selected_origin}', expected '{origin}'")
 
     # ----- DESTINATION -----
     dest_trigger = wait.until(EC.element_to_be_clickable((By.ID, "jsf-destination-input")))
     dest_trigger.click()
-    print("✅ Clicked destination input")
+    print(" Clicked destination input")
 
     dest_input = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[data-testid='jsf-destination']")))
     dest_input.clear()
     dest_input.send_keys(destination)
-    print(f"⌨️ Typed destination: {destination}")
+    print(f" Typed destination: {destination}")
     time.sleep(1.5)
     dest_input.send_keys(Keys.RETURN)
     time.sleep(1)
 
     selected_dest = driver.find_element(By.ID, "jsf-destination-input").get_attribute("value")
     if destination.lower() in selected_dest.lower():
-        print(f"✅ Destination confirmed: {selected_dest}")
+        print(f" Destination confirmed: {selected_dest}")
     else:
-        print(f"❌ Destination mismatch: Got '{selected_dest}', expected '{destination}'")
+        print(f" Destination mismatch: Got '{selected_dest}', expected '{destination}'")
 
 
 def select_date_and_time(driver, field_id, target_month, target_day, hour_val, minute_val):
     wait = WebDriverWait(driver, 15)
-    print(f"🔍 Looking for: {target_month} {target_day}")
+    print(f" Looking for: {target_month} {target_day}")
 
     # Open calendar
     field = wait.until(EC.element_to_be_clickable((By.ID, field_id)))
     driver.execute_script("arguments[0].click();", field)
-    print("📅 Calendar field clicked")
+    print(" Calendar field clicked")
 
     # Navigate calendar
     for _ in range(12):
         month_label = driver.find_element(By.ID, "datetime-picker-label").text.strip()
-        print(f"📆 Current calendar: {month_label}")
+        print(f" Current calendar: {month_label}")
 
         if month_label == target_month:
-            print("✅ Month found")
+            print(" Month found")
             try:
                 day_button = driver.find_element(
                     By.CSS_SELECTOR,
@@ -78,22 +78,22 @@ def select_date_and_time(driver, field_id, target_month, target_day, hour_val, m
                 )
                 driver.execute_script("arguments[0].scrollIntoView(true);", day_button)
                 day_button.click()
-                print(f"✅ Selected: {target_month} {target_day}")
+                print(f" Selected: {target_month} {target_day}")
 
                 time.sleep(1)
 
                 # Select hour and minute
                 Select(driver.find_element(By.ID, "jsf-outbound-time-time-picker-hour")).select_by_value(hour_val)
                 Select(driver.find_element(By.ID, "jsf-outbound-time-time-picker")).select_by_value(minute_val)
-                print(f"⏰ Time set to {hour_val}:{minute_val}")
+                print(f" Time set to {hour_val}:{minute_val}")
 
                 return {"status": f"Selected {target_month} {target_day} {hour_val}:{minute_val}"}
             except Exception as e:
-                print(f"❌ Could not click day {target_day} or select time:", e)
+                print(f" Could not click day {target_day} or select time:", e)
                 return {"error": f"Could not complete selection for {target_day}"}
         else:
             driver.find_element(By.CSS_SELECTOR, 'button[data-testid="calendar-navigate-to-next-month"]').click()
-            print("⏩ Clicked next month")
+            print(" Clicked next month")
             time.sleep(0.8)
 
     return {"error": f"Could not reach {target_month}"}
@@ -116,10 +116,10 @@ def save_screenshot(driver, prefix="screenshot"):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"screenshots/{prefix}_{timestamp}.png"
         driver.save_screenshot(filename)
-        print(f"📸 Saved screenshot to {filename}")
+        print(f" Saved screenshot to {filename}")
         return filename
     except Exception as e:
-        print(f"❌ Failed to save screenshot: {e}")
+        print(f" Failed to save screenshot: {e}")
         return None
 
 def find_cheapest_ticket(departure, destination,
@@ -169,16 +169,16 @@ def find_cheapest_ticket(departure, destination,
     
     try:
         driver.get("https://www.thetrainline.com")
-        print("✅ Loaded Trainline homepage")
+        print(" Loaded Trainline homepage")
         save_screenshot(driver, "homepage")
         
         # accept cookies/remove overlays
         try:
             cookie_button = wait.until(EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler")))
             cookie_button.click()
-            print("✅ Accepted cookies")
+            print(" Accepted cookies")
         except Exception as e:
-            print(f"⚠️ Cookie banner handling: {e}")
+            print(f" Cookie banner handling: {e}")
             
         try:
             driver.execute_script("document.querySelector('.onetrust-pc-dark-filter')?.remove();")
@@ -207,17 +207,17 @@ def find_cheapest_ticket(departure, destination,
             
         # Find and click submit
         try:
-            print("🔍 Looking for submit button")
+            print(" Looking for submit button")
             submit_button = wait.until(EC.element_to_be_clickable(
                 (By.CSS_SELECTOR, "button[data-testid='jsf-submit']")
             ))
-            print("✅ Found submit button")
+            print(" Found submit button")
             driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
             time.sleep(0.5)
             submit_button.click()
-            print("✅ Clicked submit button")
+            print(" Clicked submit button")
         except Exception as e:
-            print(f"❌ Submit button error: {e}")
+            print(f" Submit button error: {e}")
             save_screenshot(driver, "submit_error")
             
             # Try alternative method
@@ -225,18 +225,18 @@ def find_cheapest_ticket(departure, destination,
                 buttons = driver.find_elements(By.TAG_NAME, "button")
                 for button in buttons:
                     if "search" in button.text.lower():
-                        print(f"🔍 Found alternative submit button with text: {button.text}")
+                        print(f" Found alternative submit button with text: {button.text}")
                         button.click()
-                        print("✅ Clicked alternative submit button")
+                        print(" Clicked alternative submit button")
                         break
             except Exception as e2:
-                print(f"❌ Alternative submit failed: {e2}")
+                print(f" Alternative submit failed: {e2}")
 
         # Wait for the page to load with various checks
         # Increased timeout for this critical step
         longer_wait = WebDriverWait(driver, 45)
         
-        print("⏳ Waiting for results page to load...")
+        print(" Waiting for results page to load...")
         save_screenshot(driver, "after_submit")
         
         # Try multiple possible indicators that the page has loaded
@@ -253,14 +253,14 @@ def find_cheapest_ticket(departure, destination,
         for selector_type, selector_value in possible_result_indicators:
             try:
                 longer_wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                print(f"✅ Results page loaded - found element: {selector_type}='{selector_value}'")
+                print(f" Results page loaded - found element: {selector_type}='{selector_value}'")
                 found_results = True
                 break
             except:
                 pass
                 
         if not found_results:
-            print("⚠️ Could not definitively confirm results page loaded")
+            print(" Could not definitively confirm results page loaded")
         
         # Wait a bit to ensure page fully stabilizes
         time.sleep(5)
@@ -277,29 +277,29 @@ def find_cheapest_ticket(departure, destination,
             try:
                 results_url = url_method()
                 if results_url and results_url != "https://www.thetrainline.com/":
-                    print(f"✅ Got URL method {i}: {results_url}")
+                    print(f" Got URL method {i}: {results_url}")
                     break
                 else:
-                    print(f"⚠️ URL method {i} returned invalid URL: {results_url}")
+                    print(f"️ URL method {i} returned invalid URL: {results_url}")
             except Exception as e:
-                print(f"⚠️ URL method {i} failed: {e}")
+                print(f" URL method {i} failed: {e}")
         
         # Take a final screenshot of where we ended up
         save_screenshot(driver, "final_page")
             
     except Exception as e:
-        print(f"❌ General error: {e}")
+        print(f" General error: {e}")
     finally:
         # Take a screenshot before quitting if there was an error
         if not results_url or "thetrainline.com" not in results_url:
             save_screenshot(driver, "error_final")
         
-        print("🔚 Quitting WebDriver")
+        print(" Quitting WebDriver")
         driver.quit()
 
     # fallback if needed
     if not results_url or "thetrainline.com" not in results_url:
-        print("⚠️ Using fallback URL generation")
+        print(" Using fallback URL generation")
         results_url = build_trainline_link(departure, destination, date, time_of_day)
 
     return SimpleNamespace(price=None, url=results_url)
