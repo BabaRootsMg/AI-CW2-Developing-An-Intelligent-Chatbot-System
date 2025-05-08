@@ -15,7 +15,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 def select_origin_and_destination(driver, origin, destination):
     wait = WebDriverWait(driver, 20)
 
-    #ORIGIN 
+    # ----- ORIGIN -----
     origin_trigger = wait.until(EC.element_to_be_clickable((By.ID, "jsf-origin-input")))
     origin_trigger.click()
     print(" Clicked origin input")
@@ -34,7 +34,7 @@ def select_origin_and_destination(driver, origin, destination):
     else:
         print(f" Origin mismatch: Got '{selected_origin}', expected '{origin}'")
 
-    #Destination
+    # ----- DESTINATION -----
     dest_trigger = wait.until(EC.element_to_be_clickable((By.ID, "jsf-destination-input")))
     dest_trigger.click()
     print(" Clicked destination input")
@@ -81,7 +81,7 @@ def select_date_and_time(driver, field_id, target_month, target_day, hour_val, m
 
                 time.sleep(1)
 
-                #Select hour and miute
+                # Select hour and minute
                 Select(driver.find_element(By.ID, "jsf-outbound-time-time-picker-hour")).select_by_value(hour_val)
                 Select(driver.find_element(By.ID, "jsf-outbound-time-time-picker")).select_by_value(minute_val)
                 print(f" Time set to {hour_val}:{minute_val}")
@@ -108,18 +108,6 @@ def build_trainline_link(departure_code, destination_code, date, time_of_day):
     }
     return "https://www.thetrainline.com/search?" + urlencode(params)
 
-def save_screenshot(driver, prefix="screenshot"):
-    """Save a screenshot with timestamp """
-    try:
-        os.makedirs("screenshots", exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"screenshots/{prefix}_{timestamp}.png"
-        driver.save_screenshot(filename)
-        print(f" Saved screenshot to {filename}")
-        return filename
-    except Exception as e:
-        print(f" Failed to save screenshot: {e}")
-        return None
 
 def find_cheapest_ticket(departure, destination,
                          date, time_of_day=None,
