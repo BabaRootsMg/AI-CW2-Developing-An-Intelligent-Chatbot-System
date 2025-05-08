@@ -7,7 +7,7 @@ import logging
 
 from chatbot_logic import Chatbot
 
-# --- Logging Setup ---
+#Logs for chatbot
 logging.basicConfig(
     filename='chatbot.log',
     level=logging.INFO,
@@ -15,10 +15,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Instantiate a single Chatbot for the session
+
 bot = Chatbot()
 
-# --- GUI Functions ---
+# Gui Functions
 def send_message(event=None):
     user_message = entry_var.get().strip()
     # Basic input validation
@@ -96,9 +96,9 @@ def reset_conversation():
     display_message("Bot", "Hello! How can I help you today?")
 
 
-# --- Build the Tkinter UI ---
+#tkinter ui
 root = tk.Tk()
-root.title("Train Checker Chatbot")
+root.title("Best train tracker")
 root.geometry("800x600")
 
 # Chat display area
