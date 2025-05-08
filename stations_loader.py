@@ -7,13 +7,6 @@ def load_station_dict(csv_path: Path) -> dict[str, str]:
     Load a CSV of UK stations and build a mapping from station name variants
     (official name, long name, alias) to their 3-letter station codes.
 
-    The CSV is expected to have rows with at least five fields:
-      official_name, long_name, name_alias, alpha3, tiploc
-
-    - alpha3: the primary 3-letter code
-    - tiploc: fallback code if alpha3 is missing
-
-
     Returns:
         station_map: Dict mapping lowercased station names to their code.
     """
