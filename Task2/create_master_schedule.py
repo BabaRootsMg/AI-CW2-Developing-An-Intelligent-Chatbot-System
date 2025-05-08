@@ -1,32 +1,16 @@
-#!/usr/bin/env python3
-"""
-Script to rebuild and save master_schedule.csv
-from six raw service detail CSVs in a local data/ folder.
-"""
 
 import sys
+import argparse
+import logging
 from pathlib import Path
+from typing import List, Dict
+
 import pandas as pd
 
-# 1) Set up paths
-base_dir = Path.cwd()
-data_dir = base_dir / "data"
-if not data_dir.is_dir():
-    sys.exit(f"❌ 'data/' folder not found at {data_dir}\n"
-             "Please create a 'data' folder next to this script and copy the six CSV files into it.")
-
-# 2) Raw filenames
-filenames = [
-    "2022_service_details_London_to_Norwich.csv",
-    "2022_service_details_Norwich_to_London.csv",
-    "2023_service_details_London_to_Norwich.csv",
-    "2023_service_details_Norwich_to_London.csv",
-    "2024_service_details_London_to_Norwich.csv",
-    "2024_service_details_Norwich_to_London.csv",
-]
-
-# 3) Column‐name mapping
-rename_map = {
+# ----------------------------------------------------------------------------
+# Constants
+# ----------------------------------------------------------------------------
+RENAME_MAP: Dict[str, str] = {
     "gbtt_ptd": "scheduled_departure_time",
     "planned_departure_time": "scheduled_departure_time",
     "gbtt_pta": "scheduled_arrival_time",
@@ -43,8 +27,7 @@ rename_map = {
     "toc_code": "toc_code",
 }
 
-# 4) Desired master columns (including new 'year' field)
-master_cols = [
+MASTER_COLUMNS: List[str] = [
     "rid",
     "date_of_service",
     "location",
@@ -58,38 +41,114 @@ master_cols = [
     "direction",
 ]
 
-# 5) Load, standardize, and collect DataFrames
-dfs = []
-for fname in filenames:
-    path = data_dir / fname
-    if not path.exists():
-        sys.exit(f"❌ Missing file: {path}")
+# ----------------------------------------------------------------------------
+# Helper Functions
+# ----------------------------------------------------------------------------
+def parse_args() -> argparse.Namespace:
+    """
+    Parse command-line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description="Rebuild and save master_schedule.csv from raw service CSVs"
+    )
+    parser.add_argument(
+        "-i", "--input-dir",
+        type=Path,
+        default=Path.cwd() / "data",
+        help="Path to folder containing raw CSV files",
+    )
+    parser.add_argument(
+        "-o", "--output-file",
+        type=Path,
+        default=Path.cwd() / "master_schedule.csv",
+        help="Where to save the merged schedule",
+    )
+    return parser.parse_args()
 
+
+def setup_logging():
+    """
+    Configure the logging format and level.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+
+def find_csv_files(input_dir: Path) -> List[Path]:
+    """
+    Generate expected filenames for years 2022–2024 and both travel directions.
+    """
+    files: List[Path] = []
+    for year in range(2022, 2025):
+        for src, dst in [("London", "Norwich"), ("Norwich", "London")]:
+            fname = f"{year}_service_details_{src}_to_{dst}.csv"
+            files.append(input_dir / fname)
+    return files
+
+
+def load_and_standardize(path: Path) -> pd.DataFrame:
+    """
+    Load a CSV, rename columns, add missing ones, and tag year + direction.
+    """
     df = pd.read_csv(path)
-    # Rename columns to master names
-    df = df.rename(columns=rename_map)
-    # Remove any duplicate columns created by renaming
+    df = df.rename(columns=RENAME_MAP)
+    # Drop any accidental duplicate columns
     df = df.loc[:, ~df.columns.duplicated()]
 
-    # Extract year from filename and add as column
-    file_year = int(fname.split('_')[0])
-    df['year'] = file_year
+    # Extract year and direction
+    year = int(path.stem.split('_')[0])
+    direction = (
+        "LON→NOR" if "London_to_Norwich" in path.name
+        else "NOR→LON"
+    )
+    df['year'] = year
+    df['direction'] = direction
 
-    # Ensure all master columns exist
-    for col in master_cols:
+    # Ensure all master columns are present
+    for col in MASTER_COLUMNS:
         if col not in df.columns:
             df[col] = pd.NA
 
-    # Keep only the master columns (except 'direction', which we'll add next)
-    df = df[[c for c in master_cols if c != 'direction']]
+    # Return only the columns we care about, in order
+    return df[MASTER_COLUMNS]
 
-    # Add direction based on filename
-    df['direction'] = 'LON→NOR' if 'London_to_Norwich' in fname else 'NOR→LON'
-    dfs.append(df)
+# ----------------------------------------------------------------------------
+# Main Execution
+# ----------------------------------------------------------------------------
 
-# 6) Concatenate and save
-master_df = pd.concat(dfs, ignore_index=True)
-out_path = base_dir / "master_schedule.csv"
-master_df.to_csv(out_path, index=False)
+def main():
+    args = parse_args()
+    setup_logging()
 
-print(f"✅ master_schedule.csv successfully created at:\n   {out_path}")
+    input_dir = args.input_dir
+    output_file = args.output_file
+
+    if not input_dir.is_dir():
+        logging.error(f"Data directory not found: {input_dir}")
+        sys.exit(1)
+
+    csv_paths = find_csv_files(input_dir)
+    data_frames: List[pd.DataFrame] = []
+
+    for path in csv_paths:
+        if not path.exists():
+            logging.error(f"Missing file: {path.name}")
+            sys.exit(1)
+
+        logging.info(f"Loading {path.name}")
+        df = load_and_standardize(path)
+        data_frames.append(df)
+
+    # Concatenate all years and directions
+    master_df = pd.concat(data_frames, ignore_index=True)
+
+    # Save to CSV
+    master_df.to_csv(output_file, index=False)
+    logging.info(f"✅ Master schedule successfully saved to: {output_file}")
+
+
+if __name__ == "__main__":
+    main()

@@ -108,6 +108,18 @@ def build_trainline_link(departure_code, destination_code, date, time_of_day):
     }
     return "https://www.thetrainline.com/search?" + urlencode(params)
 
+def save_screenshot(driver, prefix="screenshot"):
+    """Save a screenshot with timestamp """
+    try:
+        os.makedirs("screenshots", exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"screenshots/{prefix}_{timestamp}.png"
+        driver.save_screenshot(filename)
+        print(f" Saved screenshot to {filename}")
+        return filename
+    except Exception as e:
+        print(f" Failed to save screenshot: {e}")
+        return None
 
 def find_cheapest_ticket(departure, destination,
                          date, time_of_day=None,
