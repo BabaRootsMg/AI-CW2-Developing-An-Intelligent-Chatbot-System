@@ -1,11 +1,19 @@
+# trainlinescraper.py
+
+
+import datetime
+import time
+from types import SimpleNamespace
+from urllib.parse import urlencode
+
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-import time
-from types import SimpleNamespace
-
+from selenium.common.exceptions import TimeoutException
 
 def select_origin_and_destination(driver, origin, destination):
     wait = WebDriverWait(driver, 20)
@@ -56,7 +64,7 @@ def select_date_and_time(driver, field_id, target_month, target_day, hour_val, m
     # Open calendar
     field = wait.until(EC.element_to_be_clickable((By.ID, field_id)))
     driver.execute_script("arguments[0].click();", field)
-    print(f"📅 Calendar field clicked")
+    print("📅 Calendar field clicked")
 
     # Navigate calendar
     for _ in range(12):
@@ -66,8 +74,10 @@ def select_date_and_time(driver, field_id, target_month, target_day, hour_val, m
         if month_label == target_month:
             print("✅ Month found")
             try:
-                day_button = driver.find_element(By.CSS_SELECTOR,
-                    f'button[data-testid="jsf-calendar-date-button-{target_day}"]')
+                day_button = driver.find_element(
+                    By.CSS_SELECTOR,
+                    f'button[data-testid="jsf-calendar-date-button-{target_day}"]'
+                )
                 driver.execute_script("arguments[0].scrollIntoView(true);", day_button)
                 day_button.click()
                 print(f"✅ Selected: {target_month} {target_day}")
@@ -91,53 +101,68 @@ def select_date_and_time(driver, field_id, target_month, target_day, hour_val, m
     return {"error": f"Could not reach {target_month}"}
 
 
-def find_cheapest_ticket(departure, destination, date, time_of_day=None, trip_type="single"):
+def build_trainline_link(departure_code, destination_code, date, time_of_day):
+    params = {
+        "originStation":      departure_code,
+        "destinationStation": destination_code,
+        "outwardDate":        date.isoformat(),
+        "outwardTime":        time_of_day,
+        "journeyType":        "single"
+    }
+    return "https://www.thetrainline.com/search?" + urlencode(params)
+
+def find_cheapest_ticket(departure, destination,
+                         date, time_of_day=None,
+                         trip_type="single", return_date=None, return_time=None):
     """
-    Wraps your Selenium helper functions into a single call.
-    Returns SimpleNamespace(price: float, url: str).
+    Fill the Trainline form via Selenium, then return the results-page URL.
+    Falls back to build_trainline_link(...) on any timeout or JS failure.
     """
-    # ────────────────────────────────────────────────────────────
-    # HANDLE MISSING TIME
+    # 1) Normalize time_of_day
     if time_of_day is None:
         hr, mn = "00", "00"
+        time_of_day = "00:00"
     elif isinstance(time_of_day, str):
         hr, mn = time_of_day.split(":")
     else:
         hr, mn = time_of_day.strftime("%H"), time_of_day.strftime("%M")
-    # ────────────────────────────────────────────────────────────
+        time_of_day = f"{hr}:{mn}"
 
+    # 2) Stealthy ChromeOptions
     opts = webdriver.ChromeOptions()
-    opts.add_argument("--headless")
+    opts.add_argument("--headless") 
     opts.add_argument("--window-size=1920,1080")
-    driver = webdriver.Chrome(options=opts)
-    wait   = WebDriverWait(driver, 20)
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/114.0.0.0 Safari/537.36"
+    )
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=opts
+    )
+    # hide webdriver flag
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {"source": "Object.defineProperty(navigator, 'webdriver', {get:()=>undefined});"}
+    )
+    wait = WebDriverWait(driver, 20)
 
     try:
         driver.get("https://www.thetrainline.com")
-
-        # Accept cookies if needed
+        # accept cookies/remove overlays
         try:
             wait.until(EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))).click()
-        except Exception:
+        except:
             pass
+        driver.execute_script("document.querySelector('.onetrust-pc-dark-filter')?.remove();")
 
-        # ──────────────────────────────────────────────────────
-        # MAKE SURE DARK COOKIE OVERLAY IS GONE
-        try:
-            wait.until(EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, ".onetrust-pc-dark-filter")
-            ))
-        except Exception:
-            driver.execute_script("""
-                const o = document.querySelector('.onetrust-pc-dark-filter');
-                if (o) o.remove();
-            """)
-        # ──────────────────────────────────────────────────────
-
-        # Step 1: select origin & destination
+        # fill in form
         select_origin_and_destination(driver, departure, destination)
-
-        # Step 2: select date & time
         select_date_and_time(
             driver,
             field_id="jsf-outbound-time-input-toggle",
@@ -147,98 +172,41 @@ def find_cheapest_ticket(departure, destination, date, time_of_day=None, trip_ty
             minute_val=mn
         )
 
-        # Step 3: remove any lingering overlay before submit
-        driver.execute_script("""
-            const o = document.querySelector('.onetrust-pc-dark-filter');
-            if (o) o.remove();
-        """)
-
-        # Step 4: Submit search
-        btn = wait.until(EC.element_to_be_clickable(
+        # submit
+        driver.execute_script("document.querySelector('.onetrust-pc-dark-filter')?.remove();")
+        wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, "button[data-testid='jsf-submit']")
-        ))
-        btn.click()
+        )).click()
 
-        # Step 5: Wait for results
-        wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, "[data-testid='outbound-journey']")
-        ))
-
-        # Step 6: Scrape cheapest price & link
-        price_txt = driver.find_element(
-            By.CSS_SELECTOR,
-            ".outbound-journey .ticket-info .price .amount"
-        ).text.replace("£", "")
-        price = float(price_txt)
-        url = driver.find_element(
-            By.CSS_SELECTOR,
-            ".outbound-journey .cta a"
-        ).get_attribute("href")
-
-        return SimpleNamespace(price=price, url=url)
+        # wait & grab URL
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='outbound-journey']")))
+            results_url = driver.execute_script("return window.location.href;")
+        except TimeoutException:
+            results_url = None
 
     finally:
         driver.quit()
 
+    # fallback if needed
+    if not results_url:
+        results_url = build_trainline_link(departure, destination, date, time_of_day)
 
-# ---------- Run Script ----------
+    return SimpleNamespace(price=None, url=results_url)
+
+
 if __name__ == "__main__":
-    options = webdriver.ChromeOptions()
-    options.add_argument("--window-size=1920,1080")
-    driver = webdriver.Chrome(options=options)
+    # Quick test harness
+    departure = "Norwich"
+    destination = "Ipswich"
+    travel_date = datetime.date(2025, 7, 15)
+    travel_time = "20:00"
 
-    try:
-        driver.get("https://www.thetrainline.com")
-        print("🌍 Opened Trainline")
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-        # Accept cookies
-        try:
-            WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))
-            ).click()
-            print("✅ Cookie banner closed")
-        except:
-            print("⚠️ No cookie banner")
-
-        # Step 1: Select stations
-        select_origin_and_destination(driver, "Norwich", "London Liverpool Street")
-
-        # Step 2: Select date and time
-        result = select_date_and_time(
-            driver,
-            field_id="jsf-outbound-time-input-toggle",
-            target_month="August 2025",
-            target_day="20",
-            hour_val="18",
-            minute_val="15"
-        )
-
-        # Step 3: Dismiss calendar
-        try:
-            body = driver.find_element(By.TAG_NAME, "body")
-            body.click()
-            time.sleep(1)
-            print("🧹 Dismissed calendar/modal")
-        except Exception as e:
-            print("⚠️ Could not dismiss calendar:", e)
-
-        # Step 4: Click 'Get cheapest tickets'
-        search_button = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-testid="jsf-submit"]'))
-        )
-        search_button.click()
-        print("🔎 Clicked 'Get cheapest tickets'")
-
-        # Step 5: Wait for results
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='outbound-journey']"))
-        )
-        print("✅ Results page loaded")
-
-        print("🎯 Final result:", result)
-
-        input("⏸ Press Enter to close browser...")
-
-    finally:
-        driver.quit()
+    ticket = find_cheapest_ticket(
+        departure=departure,
+        destination=destination,
+        date=travel_date,
+        time_of_day=travel_time,
+        trip_type="single"
+    )
+    print("Booking URL:", ticket.url)
