@@ -1,8 +1,6 @@
-# trainlinescraper.py
-
-
 import datetime
 import time
+import os
 from types import SimpleNamespace
 from urllib.parse import urlencode
 
@@ -13,7 +11,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 def select_origin_and_destination(driver, origin, destination):
     wait = WebDriverWait(driver, 20)
@@ -111,6 +109,19 @@ def build_trainline_link(departure_code, destination_code, date, time_of_day):
     }
     return "https://www.thetrainline.com/search?" + urlencode(params)
 
+def save_screenshot(driver, prefix="screenshot"):
+    """Save a screenshot with timestamp"""
+    try:
+        os.makedirs("screenshots", exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"screenshots/{prefix}_{timestamp}.png"
+        driver.save_screenshot(filename)
+        print(f"📸 Saved screenshot to {filename}")
+        return filename
+    except Exception as e:
+        print(f"❌ Failed to save screenshot: {e}")
+        return None
+
 def find_cheapest_ticket(departure, destination,
                          date, time_of_day=None,
                          trip_type="single", return_date=None, return_time=None):
@@ -150,19 +161,34 @@ def find_cheapest_ticket(departure, destination,
         "Page.addScriptToEvaluateOnNewDocument",
         {"source": "Object.defineProperty(navigator, 'webdriver', {get:()=>undefined});"}
     )
-    wait = WebDriverWait(driver, 20)
+    
+    # Increased timeout for slow connections
+    wait = WebDriverWait(driver, 30)  # Increased from 20 to 30 seconds
 
+    results_url = None
+    
     try:
         driver.get("https://www.thetrainline.com")
+        print("✅ Loaded Trainline homepage")
+        save_screenshot(driver, "homepage")
+        
         # accept cookies/remove overlays
         try:
-            wait.until(EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))).click()
+            cookie_button = wait.until(EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler")))
+            cookie_button.click()
+            print("✅ Accepted cookies")
+        except Exception as e:
+            print(f"⚠️ Cookie banner handling: {e}")
+            
+        try:
+            driver.execute_script("document.querySelector('.onetrust-pc-dark-filter')?.remove();")
         except:
             pass
-        driver.execute_script("document.querySelector('.onetrust-pc-dark-filter')?.remove();")
-
+            
         # fill in form
         select_origin_and_destination(driver, departure, destination)
+        save_screenshot(driver, "after_stations")
+        
         select_date_and_time(
             driver,
             field_id="jsf-outbound-time-input-toggle",
@@ -171,25 +197,109 @@ def find_cheapest_ticket(departure, destination,
             hour_val=hr,
             minute_val=mn
         )
+        save_screenshot(driver, "after_date_time")
 
-        # submit
-        driver.execute_script("document.querySelector('.onetrust-pc-dark-filter')?.remove();")
-        wait.until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, "button[data-testid='jsf-submit']")
-        )).click()
-
-        # wait & grab URL
+        # remove any remaining overlays
         try:
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='outbound-journey']")))
-            results_url = driver.execute_script("return window.location.href;")
-        except TimeoutException:
-            results_url = None
+            driver.execute_script("document.querySelector('.onetrust-pc-dark-filter')?.remove();")
+        except:
+            pass
+            
+        # Find and click submit
+        try:
+            print("🔍 Looking for submit button")
+            submit_button = wait.until(EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "button[data-testid='jsf-submit']")
+            ))
+            print("✅ Found submit button")
+            driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+            time.sleep(0.5)
+            submit_button.click()
+            print("✅ Clicked submit button")
+        except Exception as e:
+            print(f"❌ Submit button error: {e}")
+            save_screenshot(driver, "submit_error")
+            
+            # Try alternative method
+            try:
+                buttons = driver.find_elements(By.TAG_NAME, "button")
+                for button in buttons:
+                    if "search" in button.text.lower():
+                        print(f"🔍 Found alternative submit button with text: {button.text}")
+                        button.click()
+                        print("✅ Clicked alternative submit button")
+                        break
+            except Exception as e2:
+                print(f"❌ Alternative submit failed: {e2}")
 
+        # Wait for the page to load with various checks
+        # Increased timeout for this critical step
+        longer_wait = WebDriverWait(driver, 45)
+        
+        print("⏳ Waiting for results page to load...")
+        save_screenshot(driver, "after_submit")
+        
+        # Try multiple possible indicators that the page has loaded
+        possible_result_indicators = [
+            (By.CSS_SELECTOR, "[data-testid='outbound-journey']"),
+            (By.CSS_SELECTOR, ".journey-option"),
+            (By.CSS_SELECTOR, ".results-list"),
+            (By.CSS_SELECTOR, "[id*='journey']"),
+            (By.CSS_SELECTOR, "[class*='result']"),
+            (By.CSS_SELECTOR, "h1"),  # Even just finding any H1 is a sign the page loaded
+        ]
+        
+        found_results = False
+        for selector_type, selector_value in possible_result_indicators:
+            try:
+                longer_wait.until(EC.presence_of_element_located((selector_type, selector_value)))
+                print(f"✅ Results page loaded - found element: {selector_type}='{selector_value}'")
+                found_results = True
+                break
+            except:
+                pass
+                
+        if not found_results:
+            print("⚠️ Could not definitively confirm results page loaded")
+        
+        # Wait a bit to ensure page fully stabilizes
+        time.sleep(5)
+        
+        # Get URL even if we couldn't find result elements
+        # Multiple methods to get the URL
+        url_methods = [
+            lambda: driver.current_url,
+            lambda: driver.execute_script("return window.location.href;"),
+            lambda: driver.execute_script("return document.URL;")
+        ]
+        
+        for i, url_method in enumerate(url_methods, 1):
+            try:
+                results_url = url_method()
+                if results_url and results_url != "https://www.thetrainline.com/":
+                    print(f"✅ Got URL method {i}: {results_url}")
+                    break
+                else:
+                    print(f"⚠️ URL method {i} returned invalid URL: {results_url}")
+            except Exception as e:
+                print(f"⚠️ URL method {i} failed: {e}")
+        
+        # Take a final screenshot of where we ended up
+        save_screenshot(driver, "final_page")
+            
+    except Exception as e:
+        print(f"❌ General error: {e}")
     finally:
+        # Take a screenshot before quitting if there was an error
+        if not results_url or "thetrainline.com" not in results_url:
+            save_screenshot(driver, "error_final")
+        
+        print("🔚 Quitting WebDriver")
         driver.quit()
 
     # fallback if needed
-    if not results_url:
+    if not results_url or "thetrainline.com" not in results_url:
+        print("⚠️ Using fallback URL generation")
         results_url = build_trainline_link(departure, destination, date, time_of_day)
 
     return SimpleNamespace(price=None, url=results_url)

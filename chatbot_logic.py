@@ -128,7 +128,7 @@ class Chatbot:
         )
 
         try:
-            ticket = future.result(timeout=30)  # give it a bit more time
+            ticket = future.result(timeout=300)
         except TimeoutError:
             self.logger.error("Ticket search timed out")
             self._reset_state()
